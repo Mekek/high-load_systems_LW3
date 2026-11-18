@@ -1,0 +1,315 @@
+package ifmo.poster.user;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import ifmo.poster.contracts.enums.Role;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import java.time.Duration;
+import ifmo.poster.security.AuthenticatedUser;
+import ifmo.poster.security.JwtSupport;
+import org.springframework.http.HttpHeaders;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.reactive.server.WebTestClient;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
+@AutoConfigureWebTestClient(timeout = "30s")
+@Testcontainers
+class UserApiIT {
+
+    private static final String TEST_SECRET = "test-poster-jwt-secret-with-at-least-32-bytes";
+
+    @Container
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:15-alpine");
+
+    @DynamicPropertySource
+    static void datasourceProps(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+    }
+
+    @Autowired
+    WebTestClient webTestClient;
+
+    @BeforeEach
+    void authorizeAsSupervisor() {
+        String token = JwtSupport.encode(
+                TEST_SECRET,
+                new AuthenticatedUser(1L, "test-supervisor", Role.SUPERVISOR),
+                Duration.ofHours(1)
+        );
+        webTestClient = webTestClient.mutate()
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .build();
+    }
+
+    @Test
+    void userCrudAndInternalEndpoint() {
+        Long userId = createUser("alice01", "alice@example.com");
+
+        webTestClient.get()
+                .uri("/api/users/{id}", userId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.userName").isEqualTo("alice01");
+
+        webTestClient.get()
+                .uri(uriBuilder -> uriBuilder.path("/api/users").queryParam("page", 0).queryParam("size", 20).build())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$").isArray();
+
+        webTestClient.get()
+                .uri("/internal/users/{id}", userId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.userName").isEqualTo("alice01");
+
+        webTestClient.put()
+                .uri("/api/users/{id}", userId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "userName", "alice02",
+                        "email", "alice2@example.com",
+                        "role", Role.ADMIN.name()
+                ))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.userName").isEqualTo("alice02")
+                .jsonPath("$.role").isEqualTo("ADMIN");
+
+        webTestClient.delete()
+                .uri("/api/users/{id}", userId)
+                .exchange()
+                .expectStatus().isNoContent();
+
+        webTestClient.get()
+                .uri("/api/users/{id}", userId)
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    @Test
+    void notificationCrudExposesTotalCountHeader() {
+        Long userId = createUser("notify_user", "notify@example.com");
+
+        webTestClient.post()
+                .uri("/api/notifications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "userId", userId,
+                        "title", "Hello",
+                        "message", "World"
+                ))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody()
+                .jsonPath("$.title").isEqualTo("Hello");
+
+        webTestClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/notifications")
+                        .queryParam("userId", userId)
+                        .queryParam("page", 0)
+                        .queryParam("size", 10)
+                        .build())
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals("X-Total-Count", "1")
+                .expectBody()
+                .jsonPath("$.length()").isEqualTo(1);
+    }
+
+    @Test
+    void rejectsInvalidUserPayload() {
+        webTestClient.post()
+                .uri("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "userName", "ab",
+                        "email", "not-an-email",
+                        "role", Role.USER.name()
+                ))
+                .exchange()
+                .expectStatus().isBadRequest();
+    }
+
+    @Test
+    void rejectsDuplicateUsername() {
+        createUser("unique_name", "first@example.com");
+
+        webTestClient.post()
+                .uri("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "userName", "unique_name",
+                        "email", "second@example.com",
+                        "password", "Password1!",
+                        "role", Role.USER.name()
+                ))
+                .exchange()
+                .expectStatus().isEqualTo(409);
+    }
+
+    @Test
+    void bulkCreateUsersAndClearDatabase() {
+        webTestClient.post()
+                .uri("/api/users/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "users", List.of(
+                                Map.of(
+                                        "userName", "bulk_user_01",
+                                        "email", "bulk1@example.com",
+                                        "password", "Password1!",
+                                        "role", Role.USER.name()
+                                ),
+                                Map.of(
+                                        "userName", "bulk_user_02",
+                                        "email", "bulk2@example.com",
+                                        "password", "Password1!",
+                                        "role", Role.ADMIN.name()
+                                )
+                        )
+                ))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody()
+                .jsonPath("$.length()").isEqualTo(2)
+                .jsonPath("$[0].userName").isEqualTo("bulk_user_01")
+                .jsonPath("$[1].userName").isEqualTo("bulk_user_02");
+
+        webTestClient.get()
+                .uri(uriBuilder -> uriBuilder.path("/api/users").queryParam("page", 0).queryParam("size", 50).build())
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().exists("X-Total-Count");
+
+        webTestClient.delete()
+                .uri("/api/users/data")
+                .exchange()
+                .expectStatus().isNoContent();
+
+        webTestClient.get()
+                .uri(uriBuilder -> uriBuilder.path("/api/users").queryParam("page", 0).queryParam("size", 20).build())
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals("X-Total-Count", "0")
+                .expectBody()
+                .jsonPath("$.length()").isEqualTo(0);
+    }
+
+    @Test
+    void rejectsEmptyBulkCreateUsers() {
+        webTestClient.post()
+                .uri("/api/users/bulk")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("users", List.of()))
+                .exchange()
+                .expectStatus().isBadRequest();
+    }
+
+    @Test
+    void loginReturnsJwtAndPasswordIsNeverReturned() {
+        Long userId = createUser("login_user", "login@example.com");
+
+        webTestClient.post()
+                .uri("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "userName", "login_user",
+                        "password", "Password1!"
+                ))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.accessToken").isNotEmpty()
+                .jsonPath("$.tokenType").isEqualTo("Bearer")
+                .jsonPath("$.password").doesNotExist()
+                .jsonPath("$.passwordHash").doesNotExist();
+
+        webTestClient.get()
+                .uri("/api/users/{id}", userId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.password").doesNotExist()
+                .jsonPath("$.passwordHash").doesNotExist();
+    }
+
+    @Test
+    void onlySupervisorCanCreateUsers() {
+        String userToken = JwtSupport.encode(
+                TEST_SECRET,
+                new AuthenticatedUser(99L, "ordinary-user", Role.USER),
+                Duration.ofHours(1)
+        );
+
+        webTestClient.mutate()
+                .defaultHeaders(headers -> headers.setBearerAuth(userToken))
+                .build()
+                .post()
+                .uri("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "userName", "forbidden_user",
+                        "email", "forbidden@example.com",
+                        "password", "Password1!",
+                        "role", Role.USER.name()
+                ))
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void protectedEndpointRejectsRequestWithoutToken() {
+        webTestClient.mutate()
+                .defaultHeaders(headers -> headers.remove(HttpHeaders.AUTHORIZATION))
+                .build()
+                .get()
+                .uri("/api/users")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.error").isEqualTo("Требуется действующий JWT-токен");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Long createUser(String userName, String email) {
+        Map<String, Object> created = webTestClient.post()
+                .uri("/api/users")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "userName", userName,
+                        "email", email,
+                        "password", "Password1!",
+                        "role", Role.USER.name()
+                ))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(Map.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(created).isNotNull();
+        return ((Number) created.get("id")).longValue();
+    }
+}

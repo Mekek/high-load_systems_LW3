@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-add-password-hash-and-supervisor
+      author: dev
+      comment: Пароли хранятся только как BCrypt-хэши; прежний admin становится supervisor
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: password_hash
+                  type: VARCHAR(60)
+                  constraints:
+                    nullable: true
+        - update:
+            tableName: users
+            columns:
+              - column:
+                  name: password_hash
+                  value: '$2a$10$zfYynkEajkBv/2rZBnWIse3fHRnRFe8TXCgW6T/AqvwsmRUH9ZsKG'
+        - addNotNullConstraint:
+            tableName: users
+            columnName: password_hash
+            columnDataType: VARCHAR(60)
+        - update:
+            tableName: users
+            columns:
+              - column:
+                  name: role
+                  value: SUPERVISOR
+            where: username = 'admin'

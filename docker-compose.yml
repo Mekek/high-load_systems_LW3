@@ -1,0 +1,226 @@
+services:
+
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: db-user
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: ${DB_ADMIN}
+      POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
+    expose:
+      - "5432"
+    volumes:
+      - pgdata-user:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_ADMIN} -d user_db"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - poster-net
+
+  postgres-event:
+    image: postgres:15-alpine
+    container_name: db-event
+    environment:
+      POSTGRES_DB: event_db
+      POSTGRES_USER: ${DB_ADMIN}
+      POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
+    expose:
+      - "5432"
+    volumes:
+      - pgdata-event:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_ADMIN} -d event_db"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - poster-net
+
+  postgres-order:
+    image: postgres:15-alpine
+    container_name: db-order
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: ${DB_ADMIN}
+      POSTGRES_PASSWORD: ${ADMIN_PASSWORD}
+    expose:
+      - "5432"
+    volumes:
+      - pgdata-order:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_ADMIN} -d order_db"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - poster-net
+
+  eureka-server:
+    build:
+      context: .
+      dockerfile: eureka-server/Dockerfile
+    container_name: eureka-server
+    expose:
+      - "8761"
+    environment:
+      JAVA_OPTS: "-Xmx256m"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: on-failure
+    networks:
+      - poster-net
+
+  config-server:
+    build:
+      context: .
+      dockerfile: config-server/Dockerfile
+    container_name: config-server
+    expose:
+      - "8888"
+    environment:
+      JAVA_OPTS: "-Xmx256m"
+    volumes:
+      - ./config-repo:/app/config-repo:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: on-failure
+    networks:
+      - poster-net
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "${GATEWAY_PORT}:8080"
+    environment:
+      JAVA_OPTS: "-Xmx256m"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: on-failure
+    networks:
+      - poster-net
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    container_name: user-service
+    expose:
+      - "8081"
+    environment:
+      DB_ADMIN: ${DB_ADMIN}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_SECONDS: ${JWT_EXPIRATION_SECONDS:-3600}
+      JAVA_OPTS: "-Xmx512m"
+    depends_on:
+      postgres-user:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    restart: on-failure
+    networks:
+      - poster-net
+
+  event-service:
+    build:
+      context: .
+      dockerfile: event-service/Dockerfile
+    container_name: event-service
+    expose:
+      - "8082"
+    environment:
+      DB_ADMIN: ${DB_ADMIN}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JAVA_OPTS: "-Xmx512m"
+    depends_on:
+      postgres-event:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    restart: on-failure
+    networks:
+      - poster-net
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    container_name: order-service
+    expose:
+      - "8083"
+    environment:
+      DB_ADMIN: ${DB_ADMIN}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JAVA_OPTS: "-Xmx512m"
+    depends_on:
+      postgres-order:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      event-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    restart: on-failure
+    networks:
+      - poster-net
+
+networks:
+  poster-net:
+    driver: bridge
+
+volumes:
+  pgdata-user:
+  pgdata-event:
+  pgdata-order:
