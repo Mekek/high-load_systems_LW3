@@ -2,9 +2,10 @@ package ifmo.poster.user.service;
 
 import ifmo.poster.user.dto.LoginRequest;
 import ifmo.poster.user.dto.TokenResponse;
-import ifmo.poster.user.entity.User;
 import ifmo.poster.user.exception.AuthenticationFailedException;
-import ifmo.poster.user.repository.UserRepository;
+import ifmo.poster.user.security.PosterUserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -13,16 +14,16 @@ import reactor.core.scheduler.Schedulers;
 @Service
 public class AuthService {
 
-    private final UserRepository userRepository;
+    private final UserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
 
     public AuthService(
-            UserRepository userRepository,
+            UserDetailsService userDetailsService,
             PasswordEncoder passwordEncoder,
             JwtTokenService jwtTokenService
     ) {
-        this.userRepository = userRepository;
+        this.userDetailsService = userDetailsService;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
     }
@@ -33,12 +34,16 @@ public class AuthService {
     }
 
     private TokenResponse authenticate(LoginRequest request) {
-        User user = userRepository.findByUserName(request.userName())
-                .orElseThrow(this::invalidCredentials);
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        PosterUserDetails userDetails;
+        try {
+            userDetails = (PosterUserDetails) userDetailsService.loadUserByUsername(request.userName());
+        } catch (UsernameNotFoundException ex) {
             throw invalidCredentials();
         }
-        return jwtTokenService.issue(user);
+        if (!passwordEncoder.matches(request.password(), userDetails.getPassword())) {
+            throw invalidCredentials();
+        }
+        return jwtTokenService.issue(userDetails.getDomainUser());
     }
 
     private AuthenticationFailedException invalidCredentials() {

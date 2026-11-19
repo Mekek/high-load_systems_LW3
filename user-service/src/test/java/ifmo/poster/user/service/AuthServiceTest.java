@@ -9,13 +9,14 @@ import ifmo.poster.user.dto.LoginRequest;
 import ifmo.poster.user.dto.TokenResponse;
 import ifmo.poster.user.entity.User;
 import ifmo.poster.user.exception.AuthenticationFailedException;
-import ifmo.poster.user.repository.UserRepository;
-import java.util.Optional;
+import ifmo.poster.user.security.PosterUserDetails;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -23,7 +24,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class AuthServiceTest {
 
     @Mock
-    UserRepository userRepository;
+    UserDetailsService userDetailsService;
 
     @Mock
     JwtTokenService jwtTokenService;
@@ -34,14 +35,14 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         passwordEncoder = new BCryptPasswordEncoder();
-        authService = new AuthService(userRepository, passwordEncoder, jwtTokenService);
+        authService = new AuthService(userDetailsService, passwordEncoder, jwtTokenService);
     }
 
     @Test
     void acceptsCorrectPasswordAndReturnsToken() {
         User user = user("alice", "Correct123!");
         TokenResponse expected = new TokenResponse("jwt", "Bearer", 3600);
-        when(userRepository.findByUserName("alice")).thenReturn(Optional.of(user));
+        when(userDetailsService.loadUserByUsername("alice")).thenReturn(new PosterUserDetails(user));
         when(jwtTokenService.issue(user)).thenReturn(expected);
 
         TokenResponse actual = authService.login(new LoginRequest("alice", "Correct123!")).block();
@@ -51,8 +52,8 @@ class AuthServiceTest {
 
     @Test
     void rejectsWrongPasswordWithoutExplainingWhichFieldIsWrong() {
-        when(userRepository.findByUserName("alice"))
-                .thenReturn(Optional.of(user("alice", "Correct123!")));
+        when(userDetailsService.loadUserByUsername("alice"))
+                .thenReturn(new PosterUserDetails(user("alice", "Correct123!")));
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("alice", "wrong")).block())
                 .isInstanceOf(AuthenticationFailedException.class)
@@ -61,7 +62,8 @@ class AuthServiceTest {
 
     @Test
     void rejectsUnknownUserWithSamePublicMessage() {
-        when(userRepository.findByUserName("missing")).thenReturn(Optional.empty());
+        when(userDetailsService.loadUserByUsername("missing"))
+                .thenThrow(new UsernameNotFoundException("missing"));
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("missing", "wrong")).block())
                 .isInstanceOf(AuthenticationFailedException.class)
