@@ -31,7 +31,7 @@ public class TagController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<TagResponse> create(@Valid @RequestBody CreateTagRequest request) {
         return tagService.create(request);
     }
@@ -50,7 +50,7 @@ public class TagController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<TagResponse> update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateTagRequest request
@@ -60,7 +60,7 @@ public class TagController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<Void> delete(@PathVariable Long id) {
         return tagService.delete(id);
     }

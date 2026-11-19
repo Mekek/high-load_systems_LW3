@@ -34,14 +34,14 @@ public class EventController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<EventResponse> create(@Valid @RequestBody CreateEventRequest request) {
         return eventService.create(request);
     }
 
     @PostMapping("/bulk")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<List<EventResponse>> createBulk(@Valid @RequestBody BulkCreateEventsRequest request) {
         return eventService.createBulk(request.events());
     }
@@ -71,7 +71,7 @@ public class EventController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<EventResponse> update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateEventRequest request
@@ -90,7 +90,7 @@ public class EventController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<Void> delete(@PathVariable Long id) {
         return eventService.delete(id);
     }

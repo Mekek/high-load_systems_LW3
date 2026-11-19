@@ -31,7 +31,7 @@ public class TicketTypeController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<TicketTypeResponse> create(@Valid @RequestBody CreateTicketTypeRequest request) {
         return ticketTypeService.create(request);
     }
@@ -50,7 +50,7 @@ public class TicketTypeController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<TicketTypeResponse> update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateTicketTypeRequest request
@@ -60,7 +60,7 @@ public class TicketTypeController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('SUPERUSER', 'SUPERVISOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPERVISOR')")
     public Mono<Void> delete(@PathVariable Long id) {
         return ticketTypeService.delete(id);
     }

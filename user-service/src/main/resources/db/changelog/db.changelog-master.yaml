@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changelog/004-seed-demo-data.yaml
   - include:
       file: db/changelog/005-add-authentication.yaml
+  - include:
+      file: db/changelog/006-rename-superuser-to-admin.yaml

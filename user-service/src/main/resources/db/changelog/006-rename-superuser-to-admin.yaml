@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 006-rename-superuser-to-admin
+      author: lab3
+      comment: SUPERUSER объединён с ADMIN — обновляем уже засеянные строки
+      changes:
+        - update:
+            tableName: users
+            columns:
+              - column:
+                  name: role
+                  value: ADMIN
+            where: role = 'SUPERUSER'
