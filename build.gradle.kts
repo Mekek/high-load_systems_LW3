@@ -36,6 +36,12 @@ subprojects {
     tasks.withType<Test> {
         useJUnitPlatform()
         finalizedBy(tasks.jacocoTestReport)
+        // Нужен и при bootJar: withType<Test> конфигурируется всегда.
+        // В Docker gradle.properties может отсутствовать — оставляем дефолт.
+        val postgresImage = providers.gradleProperty("postgresImage")
+                .orElse(providers.environmentVariable("POSTGRES_IMAGE"))
+                .orElse("postgres:15-alpine")
+        systemProperty("testcontainers.postgresql.image", postgresImage.get())
     }
 
     tasks.jacocoTestReport {

@@ -27,6 +27,13 @@ resilience4j:
       eventService:
         maxAttempts: 1
 
+testcontainers:
+  postgresql:
+    image: ${POSTGRES_IMAGE:postgres:15-alpine}
+
+openapi:
+  server-url: http://localhost:8080
+
 security:
   jwt:
     secret: test-poster-jwt-secret-with-at-least-32-bytes

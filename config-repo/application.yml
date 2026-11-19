@@ -6,6 +6,14 @@ eureka:
   instance:
     lease-renewal-interval-in-seconds: 5
 
+openapi:
+  server-url: http://localhost:8080
+
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-seconds: ${JWT_EXPIRATION_SECONDS:3600}
+
 logging:
   level:
     root: INFO
@@ -21,8 +29,3 @@ management:
       show-details: never
       probes:
         enabled: true
-
-security:
-  jwt:
-    secret: ${JWT_SECRET}
-    expiration-seconds: ${JWT_EXPIRATION_SECONDS:3600}

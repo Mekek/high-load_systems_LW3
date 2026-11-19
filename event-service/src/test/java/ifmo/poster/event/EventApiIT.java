@@ -16,17 +16,21 @@ import ifmo.poster.security.JwtSupport;
 import org.springframework.http.HttpHeaders;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import ifmo.poster.contracts.support.PostgresTestImage;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "spring.liquibase.enabled=true"
+)
 @ActiveProfiles("test")
 @AutoConfigureWebTestClient(timeout = "30s")
 @Testcontainers
@@ -35,22 +39,10 @@ class EventApiIT {
     private static final String TEST_SECRET = "test-poster-jwt-secret-with-at-least-32-bytes";
 
     @Container
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:15-alpine");
-
-    @DynamicPropertySource
-    static void datasourceProps(DynamicPropertyRegistry registry) {
-        registry.add("spring.r2dbc.url", () ->
-                "r2dbc:postgresql://%s:%d/%s".formatted(
-                        POSTGRES.getHost(),
-                        POSTGRES.getFirstMappedPort(),
-                        POSTGRES.getDatabaseName()
-                ));
-        registry.add("spring.r2dbc.username", POSTGRES::getUsername);
-        registry.add("spring.r2dbc.password", POSTGRES::getPassword);
-        registry.add("spring.liquibase.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.liquibase.user", POSTGRES::getUsername);
-        registry.add("spring.liquibase.password", POSTGRES::getPassword);
-    }
+    @ServiceConnection
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(
+            DockerImageName.parse(PostgresTestImage.resolve())
+    );
 
     @Autowired
     WebTestClient webTestClient;
@@ -113,6 +105,71 @@ class EventApiIT {
                 .uri("/api/events/{id}", eventId)
                 .exchange()
                 .expectStatus().isNoContent();
+    }
+
+    @Test
+    void listSeatsForEventWithAvailabilityFilter() {
+        Long eventId = createEvent("Seats Showcase", EventStatus.ACTIVE, List.of("demo"));
+        Long ticketTypeId = ticketTypeIdByName("VIP");
+
+        webTestClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/events/{eventId}/seats")
+                        .queryParam("page", 0)
+                        .queryParam("size", 10)
+                        .build(eventId))
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().exists("X-Total-Count")
+                .expectBody()
+                .jsonPath("$").isArray()
+                .jsonPath("$[0].eventId").isEqualTo(eventId.intValue())
+                .jsonPath("$[0].available").isEqualTo(true);
+
+        webTestClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/events/{eventId}/seats")
+                        .queryParam("ticketTypeId", ticketTypeId)
+                        .queryParam("availableOnly", true)
+                        .queryParam("page", 0)
+                        .queryParam("size", 5)
+                        .build(eventId))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.length()").isEqualTo(5)
+                .jsonPath("$[0].ticketTypeId").isEqualTo(ticketTypeId.intValue())
+                .jsonPath("$[0].available").isEqualTo(true);
+
+        webTestClient.post()
+                .uri("/internal/events/reservations")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "eventId", eventId,
+                        "ticketTypeId", ticketTypeId,
+                        "quantity", 2
+                ))
+                .exchange()
+                .expectStatus().isCreated();
+
+        String availableCount = webTestClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/events/{eventId}/seats")
+                        .queryParam("ticketTypeId", ticketTypeId)
+                        .queryParam("availableOnly", true)
+                        .queryParam("page", 0)
+                        .queryParam("size", 50)
+                        .build(eventId))
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().exists("X-Total-Count")
+                .returnResult(Void.class)
+                .getResponseHeaders()
+                .getFirst("X-Total-Count");
+
+        assertThat(availableCount).isNotBlank();
+        // default-seats-per-ticket-type=20, после reserve(2) свободных VIP остаётся 18
+        assertThat(Long.parseLong(availableCount)).isEqualTo(18L);
     }
 
     @Test

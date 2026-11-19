@@ -6,17 +6,19 @@
 
 - `api-gateway` — единственная внешняя точка входа;
 - `user-service` — пользователи, BCrypt-хэши паролей, вход и выдача JWT;
-- `event-service` — события, регистрация, лист ожидания и резервирование;
+- `event-service` — события, места, регистрация, лист ожидания и резервирование;
 - `order-service` — заказы и билеты;
 - `security-common` — общая проверка JWT и модель текущего пользователя;
 - `eureka-server` — регистрация сервисов;
 - `config-server` и `config-repo` — общая конфигурация;
-- три отдельные PostgreSQL: для пользователей, событий и заказов.
+- один контейнер PostgreSQL с тремя отдельными логическими БД: `user_db`, `event_db`, `order_db`.
 
 Все прикладные сервисы сами проверяют подпись JWT. Gateway передаёт заголовок
 `Authorization` дальше без изменений. Внутренние Feign-методы `/internal/**`
-доступны без пользовательского JWT, но порты сервисов не опубликованы на хосте:
-они доступны только внутри сети Docker Compose.
+доступны без пользовательского JWT, но порты прикладных сервисов не опубликованы
+на хосте: они доступны только внутри сети Docker Compose. Связь `order-service` с
+`event-service` сделана через Reactive Feign, а с блокирующим `user-service` — через
+обычный OpenFeign с переносом вызова на `boundedElastic`.
 
 ## Роли
 
@@ -53,10 +55,12 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Снаружи опубликован только Gateway: `http://localhost:8080`.
+Прикладной API опубликован только через Gateway: `http://localhost:8080`.
+Для проверки регистрации сервисов также доступна Eureka: `http://localhost:8761`.
 
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - health: `http://localhost:8080/actuator/health`
+- Eureka Dashboard: `http://localhost:8761`
 
 Если остались volumes от раннего варианта лабораторной №3:
 
