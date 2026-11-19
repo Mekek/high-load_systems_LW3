@@ -1,10 +1,22 @@
-# JAR собирается локальным Gradle; образ только упаковывает артефакт.
+# syntax=docker/dockerfile:1
+FROM eclipse-temurin:21-jdk-alpine AS builder
+
+WORKDIR /app
+
+COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY gradle ./gradle
+COPY shared-contracts ./shared-contracts
+COPY security-common ./security-common
+COPY user-service ./user-service
+
+RUN chmod +x ./gradlew && ./gradlew :user-service:bootJar --no-daemon
+
 FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 RUN apk add --no-cache curl
 
-COPY user-service/build/libs/*.jar app.jar
+COPY --from=builder /app/user-service/build/libs/*.jar app.jar
 
 EXPOSE 8081
 

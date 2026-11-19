@@ -2,11 +2,9 @@
 .idea
 .vscode
 **/.gradle
+**/build
 **/bin
 **/out
-**/build/**
-!**/build/libs/
-!**/build/libs/**
 **/.DS_Store
 **/*.md
 .env
@@ -16,5 +14,3 @@ jacoco
 **/coverage
 agent-transcripts
 terminals
-test-run.log
-.lecture_extract

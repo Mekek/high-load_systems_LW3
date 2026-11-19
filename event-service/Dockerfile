@@ -1,9 +1,22 @@
+# syntax=docker/dockerfile:1
+FROM eclipse-temurin:21-jdk-alpine AS builder
+
+WORKDIR /app
+
+COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY gradle ./gradle
+COPY shared-contracts ./shared-contracts
+COPY security-common ./security-common
+COPY event-service ./event-service
+
+RUN chmod +x ./gradlew && ./gradlew :event-service:bootJar --no-daemon
+
 FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 RUN apk add --no-cache curl
 
-COPY event-service/build/libs/*.jar app.jar
+COPY --from=builder /app/event-service/build/libs/*.jar app.jar
 
 EXPOSE 8082
 
